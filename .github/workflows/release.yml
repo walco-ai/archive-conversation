@@ -1,0 +1,43 @@
+# @implements REQ-REL-144, REQ-REL-145
+# The release of archive-conversation.
+#
+# A commit that changes the manifest and reaches the default branch is released when its version has
+# no release yet: the release v<version> of that commit, its tag created with it, its notes generated
+# from the pull requests merged since the previous release, and archive-conversation.plugin, the
+# packaged file Cowork installs, built from that commit and attached to it.
+name: release
+
+on:
+  push:
+    branches: [main]
+    paths: [".claude-plugin/plugin.json"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: version
+        run: echo "version=$(jq -r .version .claude-plugin/plugin.json)" >> "$GITHUB_OUTPUT"
+      - id: exists
+        run: |
+          if gh release view "v${{ steps.version.outputs.version }}" > /dev/null 2>&1; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+            echo "v${{ steps.version.outputs.version }} is already released."
+          else
+            echo "released=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.exists.outputs.released == 'false'
+        run: git archive --format=zip -o archive-conversation.plugin "$GITHUB_SHA"
+      - if: steps.exists.outputs.released == 'false'
+        run: >-
+          gh release create "v${{ steps.version.outputs.version }}"
+          --target "$GITHUB_SHA"
+          --title "v${{ steps.version.outputs.version }}"
+          --generate-notes
+          archive-conversation.plugin
